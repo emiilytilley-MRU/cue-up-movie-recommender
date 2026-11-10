@@ -1,1 +1,1 @@
-# cue-up-movie-reccommender
+# cue-up-movie-recommender
