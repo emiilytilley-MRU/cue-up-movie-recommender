@@ -1,1 +1,1 @@
-# cue up: movie recommender
+# Cue Up: Movie Recommender
