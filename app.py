@@ -74,6 +74,13 @@ GENRES = [
 DECADES = ["Any", "1970s", "1980s", "1990s", "2000s", "2010s", "2020s"]
 RUNTIMES = ["Any length", "Under 90 min", "90 to 120 min", "Over 120 min"]
 CERTIFICATIONS = ["G", "PG", "PG-13", "R", "NC-17"]
+# Audience = a simple way to pick by age rating (US ratings, which TMDB filters on)
+AUDIENCES = {
+    "Everyone": [],
+    "Kids & family (G, PG)": ["G", "PG"],
+    "Teens & adults (PG-13, R, NC-17)": ["PG-13", "R", "NC-17"],
+    "Adults only (R, NC-17)": ["R", "NC-17"],
+}
 # Language name -> the two-letter code TMDB expects
 LANGUAGES = {
     "Any": None, "English": "en", "French": "fr", "Spanish": "es", "Korean": "ko",
@@ -112,9 +119,14 @@ MOOD_RULES = {
 st.markdown(
     f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@800;900&family=Source+Serif+4:wght@400;500;600;700&display=swap');
 
-html, body, .stApp, [class*="css"] {{ font-family: 'Inter', sans-serif; }}
+/* Body text: Source Serif 4. Not applied to spans, so Streamlit's icon font keeps working. */
+html, body, .stApp, [class*="css"] {{ font-family: 'Source Serif 4', Georgia, serif; }}
+.stApp p, .stApp label, .stApp li, .stApp input, .stApp textarea, .stApp button,
+.stApp h1, .stApp h2, .stApp h3, .stApp [data-baseweb="tab"], .stApp [data-baseweb="select"] div,
+.stApp [data-testid="stMetricValue"], .stApp [data-testid="stMetricLabel"], .cue-card, .cue-table
+{{ font-family: 'Source Serif 4', Georgia, serif !important; }}
 .block-container {{ padding-top: 2rem; padding-bottom: 3rem; max-width: 1180px; }}
 footer, #MainMenu {{ visibility: hidden; }}
 header[data-testid="stHeader"] {{ background: transparent; }}
@@ -136,8 +148,8 @@ header[data-testid="stHeader"] {{ background: transparent; }}
 
 /* Vibe pills: the chosen one fills with teal and uses dark text */
 button[data-variant="pills"] {{ border-radius: 999px; }}
-button[data-variant="pills"][aria-checked="true"] {{ background-color: {TEAL} !important; border-color: {TEAL} !important; }}
-button[data-variant="pills"][aria-checked="true"] p {{ color: {SLATE} !important; font-weight: 600; }}
+button[data-variant="pills"][aria-checked="true"], button[data-variant="pills"][aria-pressed="true"] {{ background-color: {TEAL} !important; border-color: {TEAL} !important; }}
+button[data-variant="pills"][aria-checked="true"] p, button[data-variant="pills"][aria-pressed="true"] p {{ color: {SLATE} !important; font-weight: 600; }}
 
 /* One row in the History tab */
 .cue-hist-title {{ color: {SOFT_WHITE}; font-weight: 600; }}
@@ -168,6 +180,8 @@ button[data-variant="pills"][aria-checked="true"] p {{ color: {SLATE} !important
 .cue-chips {{ margin: 12px 0 10px; }}
 .cue-chip {{ display: inline-block; padding: 3px 11px; margin: 0 6px 6px 0; border-radius: 999px;
              background: {TEAL}55; color: {SOFT_WHITE}; font-size: 0.78rem; font-weight: 500; }}
+.cue-tagline {{ color: {LAVENDER}; font-style: italic; font-size: 0.9rem; margin-top: 6px; }}
+.cue-about {{ color: {SOFT_WHITE}; font-size: 0.95rem; line-height: 1.55; margin: 0 0 12px; }}
 .cue-why {{ border-left: 3px solid {TEAL}; padding-left: 12px; color: {SOFT_WHITE}d9;
             font-size: 0.92rem; line-height: 1.5; }}
 .cue-watch {{ color: {TAUPE}; font-size: 0.85rem; margin-top: 12px; }}
@@ -189,12 +203,14 @@ button[data-variant="pills"][aria-checked="true"] p {{ color: {SLATE} !important
     unsafe_allow_html=True,
 )
 
-def movie_card(title, year, runtime, cert, rating, chips, why, watch, poster=None):
+def movie_card(title, year, runtime, cert, rating, chips, why, watch, poster=None, about="", tagline=""):
     """Return the HTML for one movie card. Every result uses this one function,
     so all cards look identical and a design change happens in one place.
     Text from TMDB is escaped so a title like "Tom & Jerry" cannot break the layout."""
     chip_html = "".join(f'<span class="cue-chip">{html.escape(str(c))}</span>' for c in chips)
     poster_html = f'<img src="{poster}" alt="">' if poster else "▶"
+    tagline_html = f'<div class="cue-tagline">“{html.escape(tagline)}”</div>' if tagline else ""
+    about_html = f'<div class="cue-about">{html.escape(about)}</div>' if about else ""
     return f"""
 <div class="cue-card">
 <div class="cue-poster">{poster_html}</div>
@@ -203,11 +219,13 @@ def movie_card(title, year, runtime, cert, rating, chips, why, watch, poster=Non
 <div>
 <div class="cue-title">{html.escape(str(title))}</div>
 <div class="cue-meta">{year} &nbsp;·&nbsp; {runtime} &nbsp;·&nbsp; {html.escape(str(cert))}</div>
+{tagline_html}
 </div>
 <div class="cue-rating">★ {rating}</div>
 </div>
 <div class="cue-chips">{chip_html}</div>
-<div class="cue-why">Why this pick: {why}</div>
+{about_html}
+<div class="cue-why">Why this pick: {html.escape(why)}</div>
 <div class="cue-watch">{watch}</div>
 </div>
 </div>
@@ -229,7 +247,7 @@ st.markdown(
     f"""
 <div style="display:flex; align-items:center; gap:14px; padding-bottom:14px; border-bottom:1px solid {TAUPE}33;">
   <img src="data:image/svg+xml;base64,{logo_b64}" width="48" height="48">
-  <div style="font-size:2.2rem; font-weight:700; letter-spacing:-0.5px; line-height:1;">
+  <div style="font-family:'Playfair Display', Georgia, serif; font-size:2.6rem; font-weight:900; letter-spacing:-1px; line-height:1;">
     <span style="color:{LAVENDER};">Cue</span><span style="color:{TEAL};">Up</span>
   </div>
 </div>
@@ -238,11 +256,66 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ---------- 3b. TMDB CONNECTION ----------
+# Placed before the sidebar because the platform filter needs TMDB's provider list.
+TMDB_BASE = "https://api.themoviedb.org/3"       # every TMDB address starts with this
+TMDB_IMG = "https://image.tmdb.org/t/p/w342"     # posters are served from here
+# One extra request bundles everything a card needs, instead of five separate ones
+DETAIL_PARTS = "credits,keywords,release_dates,watch/providers"
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def tmdb_get(path, **params):
+    """Ask TMDB for something and return the reply as a Python dictionary.
+    The key comes from Streamlit's secrets, so it is never written in this file.
+    Replies are remembered for an hour (cached), which keeps the app fast and
+    stays well under TMDB's request limits."""
+    key = st.secrets["TMDB_API_KEY"]
+    reply = requests.get(f"{TMDB_BASE}{path}", params={"api_key": key, **params}, timeout=10)
+    reply.raise_for_status()  # turns a failed request into an error we can catch
+    return reply.json()
+
+
+def safe_tmdb(path, **params):
+    """Same as tmdb_get, but a problem becomes a friendly message instead of a crash.
+    Returns None when something went wrong."""
+    try:
+        return tmdb_get(path, **params)
+    except (KeyError, FileNotFoundError):
+        st.error("The TMDB key is missing. Add TMDB_API_KEY to your app's secrets.")
+    except requests.HTTPError as err:
+        if err.response is not None and err.response.status_code == 401:
+            st.error("TMDB rejected the key. Check that it is the short v3 API key.")
+        else:
+            st.error("TMDB returned an error. Wait a minute and try again.")
+    except requests.RequestException:
+        st.error("Could not reach TMDB. Check your connection and try again.")
+    return None
+
+
+
+REGION = "CA"  # streaming availability is shown and filtered for Canada
+
+
+def provider_choices():
+    """Streaming services TMDB lists for Canada, most popular first, as {name: id}."""
+    data = safe_tmdb("/watch/providers/movie", watch_region=REGION)
+    results = (data or {}).get("results", [])
+
+    def rank(p):
+        return p.get("display_priorities", {}).get(REGION, p.get("display_priority", 999))
+
+    return {p["provider_name"]: p["provider_id"] for p in sorted(results, key=rank)[:25]}
+
+
 # ---------- 4. SIDEBAR FILTERS ----------
-# Five filter groups, so the sidebar stays short. The vibe picker lives on the Vibe tab. Layout only for now:
-# the values are stored in variables and get connected to TMDB in a later step
+# Six filter groups, so the sidebar stays short. The vibe picker lives on the Vibe tab.
 with st.sidebar:
     st.markdown('<div class="cue-label">Filters</div>', unsafe_allow_html=True)
+
+    with st.expander("Audience", expanded=True):
+        audience = st.radio("Who is watching?", list(AUDIENCES), label_visibility="collapsed",
+                            help="Uses US age ratings. Movies with no rating listed are hidden when this is on.")
 
     with st.expander("Genre", expanded=True):
         genres = st.multiselect("Include genres", GENRES, placeholder="Any genre")
@@ -256,11 +329,22 @@ with st.sidebar:
     with st.expander("Quality"):
         min_rating = st.slider("Minimum rating", 0.0, 10.0, 6.5, 0.5)
         min_votes = st.select_slider("Minimum votes", options=[50, 200, 500, 1000, 5000], value=200)
+        pool_size = st.select_slider(
+            "Movies to search through", options=[60, 100, 200, 300], value=100,
+            help="More movies means more variety, but the first load takes longer.")
 
     with st.expander("Format"):
         runtime = st.selectbox("Runtime", RUNTIMES)
         certifications = st.multiselect("Certification", CERTIFICATIONS, placeholder="Any rating")
         language = st.selectbox("Language", list(LANGUAGES))
+
+    with st.expander("My platforms"):
+        platform_ids = provider_choices()
+        my_platforms = st.multiselect(
+            "My streaming subscriptions", list(platform_ids), placeholder="Any platform",
+            help="Only shows movies you can stream on these services in Canada.")
+        if not platform_ids:
+            st.caption("The platform list is unavailable right now.")
 
     with st.expander("People"):
         actor = st.text_input("Actor", placeholder="e.g. Emma Stone")
@@ -317,42 +401,7 @@ def watched_control(movie_id, title, year, scope):
             st.rerun()
 
 
-# ---------- 6. TMDB DATA ----------
-TMDB_BASE = "https://api.themoviedb.org/3"       # every TMDB address starts with this
-TMDB_IMG = "https://image.tmdb.org/t/p/w342"     # posters are served from here
-# One extra request bundles everything a card needs, instead of five separate ones
-DETAIL_PARTS = "credits,keywords,release_dates,watch/providers"
-
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def tmdb_get(path, **params):
-    """Ask TMDB for something and return the reply as a Python dictionary.
-    The key comes from Streamlit's secrets, so it is never written in this file.
-    Replies are remembered for an hour (cached), which keeps the app fast and
-    stays well under TMDB's request limits."""
-    key = st.secrets["TMDB_API_KEY"]
-    reply = requests.get(f"{TMDB_BASE}{path}", params={"api_key": key, **params}, timeout=10)
-    reply.raise_for_status()  # turns a failed request into an error we can catch
-    return reply.json()
-
-
-def safe_tmdb(path, **params):
-    """Same as tmdb_get, but a problem becomes a friendly message instead of a crash.
-    Returns None when something went wrong."""
-    try:
-        return tmdb_get(path, **params)
-    except (KeyError, FileNotFoundError):
-        st.error("The TMDB key is missing. Add TMDB_API_KEY to your app's secrets.")
-    except requests.HTTPError as err:
-        if err.response is not None and err.response.status_code == 401:
-            st.error("TMDB rejected the key. Check that it is the short v3 API key.")
-        else:
-            st.error("TMDB returned an error. Wait a minute and try again.")
-    except requests.RequestException:
-        st.error("Could not reach TMDB. Check your connection and try again.")
-    return None
-
-
+# ---------- 6. MOVIE CARDS ----------
 def certification(m):
     """Age rating such as PG or R. US first (it matches the filter), then Canada."""
     entries = m.get("release_dates", {}).get("results", [])
@@ -376,6 +425,55 @@ def watch_text(m, country="CA"):
     return " &nbsp;·&nbsp; ".join(parts) if parts else "Not listed for Canada"
 
 
+# Words that often mean a sentence gives away what happens. Those sentences are left out.
+SPOILER_WORDS = re.compile(
+    r"\b(dies|die|died|death|dead|killed|kills|murdered|turns out|twist|reveals?|revealed|"
+    r"secretly|in the end|ultimately|sacrifices?)\b", re.I)
+
+
+def about_text(m, max_chars=260):
+    """A short, spoiler-light description: the first one or two sentences of TMDB's summary
+    (the set-up), skipping any sentence with a spoiler-style word. Best effort, not a guarantee."""
+    sentences = re.split(r"(?<=[.!?])\s+", (m.get("overview") or "").strip())
+    kept = []
+    for sentence in sentences[:4]:  # the set-up is nearly always in the first few sentences
+        if sentence and not SPOILER_WORDS.search(sentence):
+            kept.append(sentence)
+        if len(kept) == 2:
+            break
+    text = " ".join(kept)
+    if len(text) > max_chars:
+        text = text[:max_chars].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+    return text or (m.get("tagline") or "").strip() or "No description is available yet."
+
+
+def join_names(names):
+    """['A', 'B', 'C'] -> 'A, B and C'"""
+    return ", ".join(names[:-1]) + " and " + names[-1] if len(names) > 1 else (names[0] if names else "")
+
+
+def extra_reasons(m):
+    """Facts that back up a pick: your platforms, audience rating, director and cast."""
+    bits = []
+    if filters["platforms"]:
+        streaming = m.get("watch/providers", {}).get("results", {}).get(REGION, {}).get("flatrate", [])
+        mine = [p["provider_name"] for p in streaming if p.get("provider_id") in filters["platforms"]]
+        if mine:
+            bits.append(f"It is streaming on {join_names(mine)}, which you have.")
+    if m.get("vote_count"):
+        bits.append(f"Viewers rate it {m['vote_average']:.1f} out of 10 across {m['vote_count']:,} votes.")
+    credits = m.get("credits", {})
+    directors = [c["name"] for c in credits.get("crew", []) if c.get("job") == "Director"][:2]
+    cast = [c["name"] for c in credits.get("cast", [])][:3]
+    if directors and cast:
+        bits.append(f"Directed by {join_names(directors)}, starring {join_names(cast)}.")
+    elif directors:
+        bits.append(f"Directed by {join_names(directors)}.")
+    elif cast:
+        bits.append(f"Starring {join_names(cast)}.")
+    return " ".join(bits)
+
+
 def show_movie(m, why, scope, extra_chips=()):
     """Turn one TMDB movie record into a card, with the Watched button under it.
     scope is the tab name. It keeps each tab's buttons separate when the same
@@ -388,15 +486,43 @@ def show_movie(m, why, scope, extra_chips=()):
     genre_chips = [g["name"] for g in m.get("genres", [])][:3]
     st.markdown(
         movie_card(title=title, year=year, runtime=runtime, cert=certification(m),
-                   rating=rating, chips=list(extra_chips) + genre_chips, why=why,
-                   watch=watch_text(m), poster=poster),
+                   rating=rating, chips=list(extra_chips) + genre_chips,
+                   why=f"{why} {extra_reasons(m)}".strip(), watch=watch_text(m), poster=poster,
+                   about=about_text(m), tagline=(m.get("tagline") or "").strip()),
         unsafe_allow_html=True,
     )
     watched_control(m["id"], title, year, scope)
 
 
-def show_picks(ranked, why_for, chips_for, scope, state_key, per_page=6):
-    """Show the top movies from a ranked list as cards, skipping watched ones.
+def us_certification(m):
+    """US age rating only (G, PG, PG-13, R, NC-17), or '' if none is listed."""
+    for entry in m.get("release_dates", {}).get("results", []):
+        if entry.get("iso_3166_1") == "US":
+            for release in entry.get("release_dates", []):
+                if release.get("certification"):
+                    return release["certification"]
+    return ""
+
+
+def audience_ok(detail):
+    """True if no audience is chosen, or the movie's US rating is in the chosen group.
+    This is a safety net so Trending and Find Similar respect the audience too."""
+    if not filters["audience"]:
+        return True
+    return us_certification(detail) in filters["audience"]
+
+
+def on_my_platforms(detail, f):
+    """True if no platforms are chosen, or the movie streams on one of them in Canada."""
+    if not f["platforms"]:
+        return True
+    streaming = detail.get("watch/providers", {}).get("results", {}).get(REGION, {}).get("flatrate", [])
+    return any(p.get("provider_id") in f["platforms"] for p in streaming)
+
+
+def show_picks(ranked, why_for, chips_for, scope, state_key, per_page=6, max_checks=60):
+    """Show the top movies from a ranked list as cards, skipping watched ones and,
+    when platforms or an audience are chosen, anything that does not match.
     why_for(m) and chips_for(m) build the explanation and the extra chips.
     A 'Show more' button adds another page of cards."""
     visible = [m for m in ranked if not is_hidden(m["id"])]
@@ -404,12 +530,24 @@ def show_picks(ranked, why_for, chips_for, scope, state_key, per_page=6):
         st.caption("Nothing to show. Try loosening a filter, or bring a movie back from History.")
         return
     count = st.session_state.get(state_key, per_page)
-    for m in visible[:count]:
+    shown = checked = 0
+    more_left = False
+    for m in visible:
+        if shown >= count or checked >= max_checks:
+            more_left = shown >= count
+            break
         detail = safe_tmdb(f"/movie/{m['id']}", append_to_response=DETAIL_PARTS)
         if detail is None:  # the error message is already on screen, so stop here
             return
+        checked += 1
+        if not on_my_platforms(detail, filters) or not audience_ok(detail):
+            continue
         show_movie(detail, why_for(m), scope, chips_for(m))
-    if len(visible) > count and st.button(f"Show {per_page} more", key=f"more_{scope}"):
+        shown += 1
+    if shown == 0:
+        st.caption("None of these match your platforms and audience in Canada. "
+                   "Add another platform, change the audience, or loosen a filter.")
+    elif more_left and st.button(f"Show {per_page} more", key=f"more_{scope}"):
         st.session_state[state_key] = count + per_page
         st.rerun()
 
@@ -468,7 +606,8 @@ filters = {
     "genres": genres, "match_all": match_mode == "All of these", "exclude": excluded_genres,
     "decade": decade, "years": years, "min_rating": min_rating, "min_votes": min_votes,
     "run_min": RUNTIME_BOUNDS[runtime][0], "run_max": RUNTIME_BOUNDS[runtime][1],
-    "certs": certifications, "language": LANGUAGES[language],
+    "certs": certifications, "audience": AUDIENCES[audience], "language": LANGUAGES[language],
+    "platforms": [platform_ids[n] for n in my_platforms], "pages": pool_size // 20,
     "actor": actor.strip(), "director": director.strip(),
 }
 
@@ -515,11 +654,17 @@ def build_params(f, mood=None):
         params["with_runtime.gte"] = f["run_min"]
     if f["run_max"] is not None:
         params["with_runtime.lte"] = f["run_max"]
-    if f["certs"]:
+    # Audience and the certification picker both limit ratings; when both are used, keep the overlap
+    certs = [c for c in f["certs"] if c in f["audience"]] if (f["certs"] and f["audience"]) else (f["certs"] or f["audience"])
+    if certs or (f["certs"] and f["audience"]):
         params["certification_country"] = "US"
-        params["certification"] = "|".join(f["certs"])
+        params["certification"] = "|".join(certs) if certs else "NONE"
     if f["language"]:
         params["with_original_language"] = f["language"]
+    if f["platforms"]:  # subscription (flatrate) availability on any chosen service
+        params["watch_region"] = REGION
+        params["with_watch_providers"] = "|".join(str(i) for i in f["platforms"])
+        params["with_watch_monetization_types"] = "flatrate"
 
     actor_id, director_id = find_person(f["actor"]), find_person(f["director"])
     if actor_id:
@@ -529,8 +674,10 @@ def build_params(f, mood=None):
     return params
 
 
-def collect(params, pages=3):
-    """Gather up to 20 movies per page from /discover/movie into one list."""
+def collect(params, pages=None):
+    """Gather movies from /discover/movie into one list (20 per page).
+    By default it reads as many pages as the 'Movies to search through' slider says."""
+    pages = pages or filters["pages"]
     movies, seen = [], set()
     for page in range(1, pages + 1):
         data = safe_tmdb("/discover/movie", page=page, **params)
@@ -599,7 +746,9 @@ def active_filter_names(f):
     if f["min_rating"] > 6.5 or f["min_votes"] > 200: names.append("quality")
     if f["run_min"] is not None or f["run_max"] is not None: names.append("runtime")
     if f["certs"]: names.append("certification")
+    if f["audience"]: names.append("audience")
     if f["language"]: names.append("language")
+    if f["platforms"]: names.append("platforms")
     if f["actor"] or f["director"]: names.append("people")
     return names
 
@@ -727,7 +876,7 @@ def style_chart(fig):
     """Same look for every chart: transparent background, palette colours."""
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color=SOFT_WHITE, family="Inter, sans-serif"),
+        font=dict(color=SOFT_WHITE, family="Source Serif 4, Georgia, serif"),
         margin=dict(l=10, r=10, t=50, b=10), height=340,
         xaxis=dict(gridcolor="rgba(187,178,174,0.15)", zeroline=False),
         yaxis=dict(gridcolor="rgba(187,178,174,0.15)", zeroline=False),
@@ -776,7 +925,9 @@ def parse_query(text):
     t = " " + text.lower().strip() + " "
     f = {"genres": [], "match_all": True, "exclude": [], "decade": "Any",
          "years": (1920, dt.date.today().year), "min_rating": 6.0, "min_votes": 100,
-         "run_min": None, "run_max": None, "certs": [], "language": None, "actor": "", "director": ""}
+         "run_min": None, "run_max": None, "certs": [], "language": None, "actor": "", "director": "",
+         "platforms": filters["platforms"],  # your subscriptions and audience always apply
+         "audience": filters["audience"]}
     notes = []
     words = sorted(GENRE_WORDS, key=len, reverse=True)  # longest first, so "science fiction" beats "science"
 
@@ -917,8 +1068,9 @@ with tab_mood:
             st.caption(f"{len(ranked)} movies fit, from {total} candidates. Best fit first.")
             show_picks(
                 ranked,
-                why_for=lambda m: (f"the plot reads {tone_words(m['_tone'])} "
-                                   f"(tone {m['_tone']:+.2f}), which fits {m['_mood'].lower()}."),
+                why_for=lambda m: (f"its plot reads {tone_words(m['_tone'])} (tone score {m['_tone']:+.2f}), "
+                                   f"a {round(m['_fit'] * 100)}% fit for {m['_mood'].lower()}, "
+                                   f"and it is tagged {join_names([GENRE_BY_ID[g] for g in m.get('genre_ids', []) if g in GENRE_BY_ID][:3])}."),
                 chips_for=lambda m: [f"{m['_mood']} {round(m['_fit'] * 100)}%"],
                 scope="vibe", state_key="n_vibe_" + "_".join(vibes),
             )
@@ -932,7 +1084,7 @@ with tab_similar:
     weight = 0.3
     if blend_moods:
         weight = st.slider("How much the vibe counts", 0, 100, 30, 10, format="%d%%") / 100
-    st.caption("Your sidebar filters for genre, release period, quality and language apply here. "
+    st.caption("Your sidebar filters for audience, genre, release period, quality and language apply here. "
                "Runtime, certification and people filters apply to Vibe and Search.")
 
     if liked.strip():
@@ -1057,7 +1209,7 @@ with tab_trending:
         if trending is not None and not items:
             st.caption("Nothing is trending right now. Try again later.")
         if items:
-            show_picks(items, why_for=lambda m: "it is one of the most-watched films on TMDB this week.",
+            show_picks(items, why_for=lambda m: "it is one of the most-watched films on TMDB this week, so a lot of people are talking about it.",
                        chips_for=lambda m: [], scope="trending", state_key="n_trending")
 
 # Insights: how plot tone is spread across the movies your filters allow
@@ -1088,7 +1240,7 @@ with tab_search:
     query = st.text_input("What are you looking for?", key="search_text",
                           placeholder="e.g. funny family movies from the 90s under 100 minutes")
     st.caption("Understands genres, decades or years, runtime, ratings like PG, languages, "
-               "\"starring\" and \"directed by\", and \"not horror\". Your sidebar filters are ignored here.")
+               "\"starring\" and \"directed by\", and \"not horror\". Your platforms and audience from the sidebar still apply here.")
     if query.strip():
         parsed, notes = parse_query(query)
         if not notes:
@@ -1096,7 +1248,7 @@ with tab_search:
         else:
             st.markdown(notes_table(notes), unsafe_allow_html=True)
         with st.spinner("Searching..."):
-            pool = [m for m in collect(build_params(parsed), pages=2) if passes_basic(m, parsed)]
+            pool = [m for m in collect(build_params(parsed)) if passes_basic(m, parsed)]
         if not pool:
             st.caption("No movies matched. Loosen something in your search.")
         else:
