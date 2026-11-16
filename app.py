@@ -180,6 +180,11 @@ button[data-variant="pills"][aria-checked="true"] p, button[data-variant="pills"
 .cue-chips {{ margin: 12px 0 10px; }}
 .cue-chip {{ display: inline-block; padding: 3px 11px; margin: 0 6px 6px 0; border-radius: 999px;
              background: {TEAL}55; color: {SOFT_WHITE}; font-size: 0.78rem; font-weight: 500; }}
+.cue-meter {{ display: flex; align-items: center; gap: 10px; margin: 12px 0 2px; }}
+.cue-meter-label {{ color: {TAUPE}; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }}
+.cue-meter-track {{ flex: 0 1 180px; height: 6px; border-radius: 999px; background: {SLATE}; overflow: hidden; }}
+.cue-meter-fill {{ height: 100%; border-radius: 999px; background: linear-gradient(90deg, {TEAL}, {LAVENDER}); }}
+.cue-meter-val {{ color: {LAVENDER}; font-weight: 700; font-size: 0.95rem; }}
 .cue-tagline {{ color: {LAVENDER}; font-style: italic; font-size: 0.9rem; margin-top: 6px; }}
 .cue-about {{ color: {SOFT_WHITE}; font-size: 0.95rem; line-height: 1.55; margin: 0 0 12px; }}
 .cue-why {{ border-left: 3px solid {TEAL}; padding-left: 12px; color: {SOFT_WHITE}d9;
@@ -203,13 +208,20 @@ button[data-variant="pills"][aria-checked="true"] p, button[data-variant="pills"
     unsafe_allow_html=True,
 )
 
-def movie_card(title, year, runtime, cert, rating, chips, why, watch, poster=None, about="", tagline=""):
+def movie_card(title, year, runtime, cert, rating, chips, why, watch, poster=None, about="", tagline="", score=None):
     """Return the HTML for one movie card. Every result uses this one function,
     so all cards look identical and a design change happens in one place.
     Text from TMDB is escaped so a title like "Tom & Jerry" cannot break the layout."""
     chip_html = "".join(f'<span class="cue-chip">{html.escape(str(c))}</span>' for c in chips)
     poster_html = f'<img src="{poster}" alt="">' if poster else "▶"
     tagline_html = f'<div class="cue-tagline">“{html.escape(tagline)}”</div>' if tagline else ""
+    meter_html = ""
+    if score:  # score = (label, percent). Draws a labelled bar so the match is easy to see.
+        label, pct = score
+        pct = max(0, min(100, int(pct)))
+        meter_html = (f'<div class="cue-meter"><span class="cue-meter-label">{html.escape(str(label))}</span>'
+                      f'<div class="cue-meter-track"><div class="cue-meter-fill" style="width:{pct}%"></div></div>'
+                      f'<span class="cue-meter-val">{pct}%</span></div>')
     about_html = f'<div class="cue-about">{html.escape(about)}</div>' if about else ""
     return f"""
 <div class="cue-card">
@@ -223,6 +235,7 @@ def movie_card(title, year, runtime, cert, rating, chips, why, watch, poster=Non
 </div>
 <div class="cue-rating">★ {rating}</div>
 </div>
+{meter_html}
 <div class="cue-chips">{chip_html}</div>
 {about_html}
 <div class="cue-why">Why this pick: {html.escape(why)}</div>
@@ -474,7 +487,7 @@ def extra_reasons(m):
     return " ".join(bits)
 
 
-def show_movie(m, why, scope, extra_chips=()):
+def show_movie(m, why, scope, extra_chips=(), score=None):
     """Turn one TMDB movie record into a card, with the Watched button under it.
     scope is the tab name. It keeps each tab's buttons separate when the same
     movie shows up in two tabs. Missing data (no poster, no runtime) shows as N/A."""
@@ -488,7 +501,7 @@ def show_movie(m, why, scope, extra_chips=()):
         movie_card(title=title, year=year, runtime=runtime, cert=certification(m),
                    rating=rating, chips=list(extra_chips) + genre_chips,
                    why=f"{why} {extra_reasons(m)}".strip(), watch=watch_text(m), poster=poster,
-                   about=about_text(m), tagline=(m.get("tagline") or "").strip()),
+                   about=about_text(m), tagline=(m.get("tagline") or "").strip(), score=score),
         unsafe_allow_html=True,
     )
     watched_control(m["id"], title, year, scope)
@@ -520,7 +533,7 @@ def on_my_platforms(detail, f):
     return any(p.get("provider_id") in f["platforms"] for p in streaming)
 
 
-def show_picks(ranked, why_for, chips_for, scope, state_key, per_page=6, max_checks=60):
+def show_picks(ranked, why_for, chips_for, scope, state_key, per_page=6, max_checks=60, score_for=None):
     """Show the top movies from a ranked list as cards, skipping watched ones and,
     when platforms or an audience are chosen, anything that does not match.
     why_for(m) and chips_for(m) build the explanation and the extra chips.
@@ -542,7 +555,7 @@ def show_picks(ranked, why_for, chips_for, scope, state_key, per_page=6, max_che
         checked += 1
         if not on_my_platforms(detail, filters) or not audience_ok(detail):
             continue
-        show_movie(detail, why_for(m), scope, chips_for(m))
+        show_movie(detail, why_for(m), scope, chips_for(m), score=score_for(m) if score_for else None)
         shown += 1
     if shown == 0:
         st.caption("None of these match your platforms and audience in Canada. "
@@ -1071,7 +1084,8 @@ with tab_mood:
                 why_for=lambda m: (f"its plot reads {tone_words(m['_tone'])} (tone score {m['_tone']:+.2f}), "
                                    f"a {round(m['_fit'] * 100)}% fit for {m['_mood'].lower()}, "
                                    f"and it is tagged {join_names([GENRE_BY_ID[g] for g in m.get('genre_ids', []) if g in GENRE_BY_ID][:3])}."),
-                chips_for=lambda m: [f"{m['_mood']} {round(m['_fit'] * 100)}%"],
+                chips_for=lambda m: [],
+                score_for=lambda m: (f"{m['_mood']} fit", round(m['_fit'] * 100)),
                 scope="vibe", state_key="n_vibe_" + "_".join(vibes),
             )
 
@@ -1124,7 +1138,8 @@ with tab_similar:
                     show_picks(
                         ranked,
                         why_for=lambda m: m["_why"],
-                        chips_for=lambda m: [f"Match {round(m['_match'] * 100)}%"],
+                        chips_for=lambda m: [],
+                        score_for=lambda m: ("Match", round(m['_match'] * 100)),
                         scope="similar", state_key=f"n_sim_{base['id']}_{'_'.join(blend_moods)}",
                     )
 
